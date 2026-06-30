@@ -1,102 +1,180 @@
-const jobPost = document.getElementById('jobPost');
-const output = document.getElementById('output');
-const extractBtn = document.getElementById('extractBtn');
-const copyBtn = document.getElementById('copyBtn');
-const clearBtn = document.getElementById('clearBtn');
-const titleField = document.getElementById('titleField');
-const salaryField = document.getElementById('salaryField');
-const locationField = document.getElementById('locationField');
+const WORKER_URL = "https://workernamejob-post-parser-api.joshua-mjones.workers.dev/";
 
-function clean(value) {
-  return value ? value.replace(/\s+/g, ' ').replace(/[|•]+$/g, '').trim() : '';
-}
+const urlInput = document.getElementById("urlInput");
+const parseBtn = document.getElementById("parseBtn");
+const clearBtn = document.getElementById("clearBtn");
+const copyAllBtn = document.getElementById("copyAllBtn");
+const statusEl = document.getElementById("status");
+const resultsEl = document.getElementById("results");
 
-function getLines(text) {
-  return text
-    .split(/\r?\n/)
-    .map(line => clean(line))
-    .filter(Boolean);
-}
+let parsedJobs = [];
 
-function extractTitle(text) {
-  const lines = getLines(text);
+parseBtn.addEventListener("click", parseJobs);
+clearBtn.addEventListener("click", clearAll);
+copyAllBtn.addEventListener("click", copyAllJobs);
 
-  const labeled = text.match(/(?:job title|title|position|role)\s*[:\-]\s*(.+)/i);
-  if (labeled) return clean(labeled[1]);
+async function parseJobs() {
+  const urls = getUrls(urlInput.value);
 
-  const badWords = /(salary|pay|compensation|location|remote|benefits|about|description|requirements|responsibilities|qualifications|apply|posted)/i;
-  const likelyTitle = lines.find(line =>
-    line.length >= 4 &&
-    line.length <= 90 &&
-    !badWords.test(line) &&
-    /\b(manager|director|engineer|analyst|specialist|administrator|technician|developer|designer|assistant|coordinator|lead|intern|consultant|architect|support)\b/i.test(line)
-  );
-
-  return likelyTitle || 'Not found';
-}
-
-function extractSalary(text) {
-  const salaryPatterns = [
-    /(?:salary|pay range|compensation|base pay|annual salary)\s*[:\-]?\s*((?:\$|USD\s*)?[\d,]+(?:\.\d{2})?\s*(?:k|K)?\s*(?:-|–|to)\s*(?:\$|USD\s*)?[\d,]+(?:\.\d{2})?\s*(?:k|K)?(?:\s*(?:per year|a year|yearly|annually|\/year|per hour|hourly|\/hour|hr))?)/i,
-    /((?:\$|USD\s*)[\d,]+(?:\.\d{2})?\s*(?:k|K)?\s*(?:-|–|to)\s*(?:\$|USD\s*)?[\d,]+(?:\.\d{2})?\s*(?:k|K)?(?:\s*(?:per year|a year|yearly|annually|\/year|per hour|hourly|\/hour|hr))?)/i,
-    /((?:\$|USD\s*)[\d,]+(?:\.\d{2})?\s*(?:k|K)?\s*(?:per year|a year|yearly|annually|\/year|per hour|hourly|\/hour|hr))/i
-  ];
-
-  for (const pattern of salaryPatterns) {
-    const match = text.match(pattern);
-    if (match) return clean(match[1]);
+  if (urls.length === 0) {
+    statusEl.textContent = "Paste at least one job URL first.";
+    return;
   }
 
-  return 'Not listed';
+  parseBtn.disabled = true;
+  parseBtn.textContent = "Parsing...";
+  statusEl.textContent = `Parsing ${urls.length} URL(s)...`;
+  resultsEl.innerHTML = "";
+
+  try {
+    const response = await fetch(WORKER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ urls }),
+    });
+
+    const data = await response.json();
+
+    parsedJobs = data.results || [];
+    renderResults(parsedJobs);
+    statusEl.textContent = `Parsed ${parsedJobs.length} job(s).`;
+  } catch (error) {
+    statusEl.textContent = "Could not reach the parser API. Check the Worker URL.";
+    console.error(error);
+  } finally {
+    parseBtn.disabled = false;
+    parseBtn.textContent = "Parse Jobs";
+  }
 }
 
-function extractLocation(text) {
-  const lines = getLines(text);
-
-  const labeled = text.match(/(?:location|job location|work location)\s*[:\-]\s*(.+)/i);
-  if (labeled) return clean(labeled[1]);
-
-  const remote = text.match(/\b(remote|hybrid|on-site|onsite)\b/i);
-  const cityState = text.match(/\b([A-Z][a-zA-Z .'-]+,\s*[A-Z]{2})(?:\b|\s|\))/);
-
-  if (remote && cityState) return `${clean(cityState[1])} (${clean(remote[1])})`;
-  if (cityState) return clean(cityState[1]);
-  if (remote) return clean(remote[1]);
-
-  const locationLine = lines.find(line => /\b(remote|hybrid|on-site|onsite|United States|USA)\b/i.test(line));
-  return locationLine || 'Not found';
+function getUrls(text) {
+  return text
+    .split(/\s+/)
+    .map(item => item.trim())
+    .filter(item => item.startsWith("http://") || item.startsWith("https://"))
+    .filter((item, index, arr) => arr.indexOf(item) === index);
 }
 
-function extractJobInfo() {
-  const text = jobPost.value.trim();
-  if (!text) return;
+function renderResults(jobs) {
+  resultsEl.innerHTML = "";
 
-  const title = extractTitle(text);
-  const salary = extractSalary(text);
-  const location = extractLocation(text);
+  if (jobs.length === 0) {
+    resultsEl.innerHTML = "";
+    statusEl.textContent = "No jobs found.";
+    return;
+  }
 
-  titleField.textContent = title;
-  salaryField.textContent = salary;
-  locationField.textContent = location;
+  jobs.forEach((job, index) => {
+    const card = document.createElement("article");
+    card.className = "job-card";
 
-  output.value = `Job Title: ${title}\nSalary: ${salary}\nLocation: ${location}`;
+    const copyText = formatJob(job);
+
+    card.innerHTML = `
+      <span class="badge ${job.status === "failed" ? "failed" : "parsed"}">
+        ${job.status === "failed" ? "Needs Manual Review" : "Parsed"}
+      </span>
+
+      <h3>${escapeHtml(job.title || "Untitled Job")}</h3>
+
+      <div class="job-grid">
+        <div class="key">Company</div>
+        <div class="value">${escapeHtml(job.company || "Not found")}</div>
+
+        <div class="key">Job Title</div>
+        <div class="value">${escapeHtml(job.title || "Not found")}</div>
+
+        <div class="key">Salary</div>
+        <div class="value">${escapeHtml(job.salary || "Not found")}</div>
+
+        <div class="key">Location</div>
+        <div class="value">${escapeHtml(job.location || "Not found")}</div>
+
+        <div class="key">Work Type</div>
+        <div class="value">${escapeHtml(job.workType || "Not found")}</div>
+
+        <div class="key">URL</div>
+        <div class="value">
+          <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer">
+            ${escapeHtml(job.url)}
+          </a>
+        </div>
+      </div>
+
+      ${job.error ? `<p class="hint">${escapeHtml(job.error)}</p>` : ""}
+
+      <div class="card-actions">
+        <button onclick="copySingleJob(${index})">Copy Job</button>
+        <button class="secondary" onclick="toggleCopyText(${index})">Show Copy Text</button>
+      </div>
+
+      <textarea class="copy-text" id="copyText-${index}" style="display:none;" readonly>${escapeHtml(copyText)}</textarea>
+    `;
+
+    resultsEl.appendChild(card);
+  });
 }
 
-async function copyOutput() {
-  if (!output.value.trim()) return;
-  await navigator.clipboard.writeText(output.value);
-  copyBtn.textContent = 'Copied!';
-  setTimeout(() => copyBtn.textContent = 'Copy Output', 1200);
+function formatJob(job) {
+  return `==================================================
+
+Company:
+${job.company || "Not found"}
+
+Job Title:
+${job.title || "Not found"}
+
+Salary:
+${job.salary || "Not found"}
+
+Location:
+${job.location || "Not found"}
+
+Work Type:
+${job.workType || "Not found"}
+
+URL:
+${job.url || "Not found"}
+
+==================================================`;
+}
+
+async function copySingleJob(index) {
+  const text = formatJob(parsedJobs[index]);
+  await navigator.clipboard.writeText(text);
+  statusEl.textContent = "Copied job to clipboard.";
+}
+
+async function copyAllJobs() {
+  if (parsedJobs.length === 0) {
+    statusEl.textContent = "No parsed jobs to copy.";
+    return;
+  }
+
+  const text = parsedJobs.map(formatJob).join("\n\n");
+  await navigator.clipboard.writeText(text);
+  statusEl.textContent = "Copied all jobs to clipboard.";
+}
+
+function toggleCopyText(index) {
+  const el = document.getElementById(`copyText-${index}`);
+  el.style.display = el.style.display === "none" ? "block" : "none";
 }
 
 function clearAll() {
-  jobPost.value = '';
-  output.value = '';
-  titleField.textContent = '—';
-  salaryField.textContent = '—';
-  locationField.textContent = '—';
+  urlInput.value = "";
+  parsedJobs = [];
+  resultsEl.innerHTML = "";
+  statusEl.textContent = "No jobs parsed yet.";
 }
 
-extractBtn.addEventListener('click', extractJobInfo);
-copyBtn.addEventListener('click', copyOutput);
-clearBtn.addEventListener('click', clearAll);
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
