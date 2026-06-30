@@ -80,9 +80,10 @@ label {
   font-weight: 700;
 }
 
-textarea,
-input {
+textarea {
   width: 100%;
+  min-height: 170px;
+  resize: vertical;
   padding: 16px;
   border-radius: 14px;
   border: 1px solid var(--border);
@@ -93,13 +94,7 @@ input {
   outline: none;
 }
 
-textarea {
-  min-height: 170px;
-  resize: vertical;
-}
-
-textarea:focus,
-input:focus {
+textarea:focus {
   border-color: var(--accent);
 }
 
@@ -180,47 +175,29 @@ button.danger:hover {
   border-color: rgba(245, 158, 11, 0.35);
 }
 
-.job-card h3,
-.review-card h3 {
-  margin: 0 0 12px;
-  font-size: 1.25rem;
-}
-
-.job-summary {
-  display: grid;
-  gap: 4px;
-  margin-bottom: 14px;
-}
-
 .job-title-line {
-  font-size: 1.2rem;
+  font-size: 1.25rem;
   font-weight: 900;
+  margin-bottom: 4px;
 }
 
-.job-company-line,
-.job-meta-line {
-  color: var(--muted);
-}
-
-.job-grid {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 8px 14px;
-  margin-bottom: 14px;
-}
-
-.key {
-  color: var(--muted);
-  font-weight: 700;
-}
-
-.value {
+.job-company-line {
   color: var(--text);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.job-meta-line,
+.job-url-line {
+  color: var(--muted);
+  margin-bottom: 8px;
   word-break: break-word;
 }
 
-.value a {
+.job-url-line a,
+.small-link {
   color: #a78bfa;
+  word-break: break-word;
 }
 
 .badge,
@@ -256,6 +233,7 @@ button.danger:hover {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  margin-top: 14px;
 }
 
 .copy-text,
@@ -272,16 +250,7 @@ button.danger:hover {
   margin-bottom: 12px;
 }
 
-.small-link {
-  color: #a78bfa;
-  word-break: break-word;
-}
-
 @media (max-width: 700px) {
-  .job-grid {
-    grid-template-columns: 1fr;
-  }
-
   .actions,
   .output-header,
   .header-actions {
