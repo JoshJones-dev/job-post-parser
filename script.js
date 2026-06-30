@@ -1,53 +1,71 @@
 const WORKER_URL = "https://workernamejob-post-parser-api.joshua-mjones.workers.dev/";
 
-const urlInput = document.getElementById("urlInput");
-const parseBtn = document.getElementById("parseBtn");
-const clearBtn = document.getElementById("clearBtn");
-const copyAllBtn = document.getElementById("copyAllBtn");
-const statusEl = document.getElementById("status");
-const resultsEl = document.getElementById("results");
-
 let parsedJobs = [];
 
-parseBtn.addEventListener("click", parseJobs);
-clearBtn.addEventListener("click", clearAll);
-copyAllBtn.addEventListener("click", copyAllJobs);
+window.addEventListener("DOMContentLoaded", () => {
+  const urlInput = document.getElementById("urlInput");
+  const parseBtn = document.getElementById("parseBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const copyAllBtn = document.getElementById("copyAllBtn");
+  const statusEl = document.getElementById("status");
+  const resultsEl = document.getElementById("results");
 
-async function parseJobs() {
-  const urls = getUrls(urlInput.value);
-
-  if (urls.length === 0) {
-    statusEl.textContent = "Paste at least one job URL first.";
+  if (!urlInput || !parseBtn || !clearBtn || !copyAllBtn || !statusEl || !resultsEl) {
+    console.error("Missing one or more HTML elements. Check your index.html IDs.");
     return;
   }
 
-  parseBtn.disabled = true;
-  parseBtn.textContent = "Parsing...";
-  statusEl.textContent = `Parsing ${urls.length} URL(s)...`;
-  resultsEl.innerHTML = "";
+  parseBtn.addEventListener("click", async () => {
+    const urls = getUrls(urlInput.value);
 
-  try {
-    const response = await fetch(WORKER_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ urls }),
-    });
+    if (urls.length === 0) {
+      statusEl.textContent = "Paste at least one job URL first.";
+      return;
+    }
 
-    const data = await response.json();
+    parseBtn.disabled = true;
+    parseBtn.textContent = "Parsing...";
+    statusEl.textContent = `Parsing ${urls.length} URL(s)...`;
+    resultsEl.innerHTML = "";
 
-    parsedJobs = data.results || [];
-    renderResults(parsedJobs);
-    statusEl.textContent = `Parsed ${parsedJobs.length} job(s).`;
-  } catch (error) {
-    statusEl.textContent = "Could not reach the parser API. Check the Worker URL.";
-    console.error(error);
-  } finally {
-    parseBtn.disabled = false;
-    parseBtn.textContent = "Parse Jobs";
-  }
-}
+    try {
+      const response = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls }),
+      });
+
+      const data = await response.json();
+      parsedJobs = data.results || [];
+      renderResults(parsedJobs, resultsEl, statusEl);
+      statusEl.textContent = `Parsed ${parsedJobs.length} job(s).`;
+    } catch (error) {
+      statusEl.textContent = "Could not reach the parser API. Check the Worker URL.";
+      console.error(error);
+    } finally {
+      parseBtn.disabled = false;
+      parseBtn.textContent = "Parse Jobs";
+    }
+  });
+
+  clearBtn.addEventListener("click", () => {
+    urlInput.value = "";
+    parsedJobs = [];
+    resultsEl.innerHTML = "";
+    statusEl.textContent = "No jobs parsed yet.";
+  });
+
+  copyAllBtn.addEventListener("click", async () => {
+    if (parsedJobs.length === 0) {
+      statusEl.textContent = "No parsed jobs to copy.";
+      return;
+    }
+
+    const text = parsedJobs.map(formatJob).join("\n\n");
+    await navigator.clipboard.writeText(text);
+    statusEl.textContent = "Copied all jobs to clipboard.";
+  });
+});
 
 function getUrls(text) {
   return text
@@ -57,11 +75,10 @@ function getUrls(text) {
     .filter((item, index, arr) => arr.indexOf(item) === index);
 }
 
-function renderResults(jobs) {
+function renderResults(jobs, resultsEl, statusEl) {
   resultsEl.innerHTML = "";
 
   if (jobs.length === 0) {
-    resultsEl.innerHTML = "";
     statusEl.textContent = "No jobs found.";
     return;
   }
@@ -69,8 +86,6 @@ function renderResults(jobs) {
   jobs.forEach((job, index) => {
     const card = document.createElement("article");
     card.className = "job-card";
-
-    const copyText = formatJob(job);
 
     card.innerHTML = `
       <span class="badge ${job.status === "failed" ? "failed" : "parsed"}">
@@ -110,7 +125,7 @@ function renderResults(jobs) {
         <button class="secondary" onclick="toggleCopyText(${index})">Show Copy Text</button>
       </div>
 
-      <textarea class="copy-text" id="copyText-${index}" style="display:none;" readonly>${escapeHtml(copyText)}</textarea>
+      <textarea class="copy-text" id="copyText-${index}" style="display:none;" readonly>${escapeHtml(formatJob(job))}</textarea>
     `;
 
     resultsEl.appendChild(card);
@@ -144,30 +159,12 @@ ${job.url || "Not found"}
 async function copySingleJob(index) {
   const text = formatJob(parsedJobs[index]);
   await navigator.clipboard.writeText(text);
-  statusEl.textContent = "Copied job to clipboard.";
-}
-
-async function copyAllJobs() {
-  if (parsedJobs.length === 0) {
-    statusEl.textContent = "No parsed jobs to copy.";
-    return;
-  }
-
-  const text = parsedJobs.map(formatJob).join("\n\n");
-  await navigator.clipboard.writeText(text);
-  statusEl.textContent = "Copied all jobs to clipboard.";
+  document.getElementById("status").textContent = "Copied job to clipboard.";
 }
 
 function toggleCopyText(index) {
   const el = document.getElementById(`copyText-${index}`);
   el.style.display = el.style.display === "none" ? "block" : "none";
-}
-
-function clearAll() {
-  urlInput.value = "";
-  parsedJobs = [];
-  resultsEl.innerHTML = "";
-  statusEl.textContent = "No jobs parsed yet.";
 }
 
 function escapeHtml(value) {
