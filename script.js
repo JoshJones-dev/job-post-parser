@@ -17,7 +17,7 @@ document.addEventListener("DOMContentLoaded", () => {
   parseBtn.addEventListener("click", async () => {
     const urls = getUrls(urlInput.value);
 
-    if (urls.length === 0) {
+    if (!urls.length) {
       statusEl.textContent = "Paste at least one job URL first.";
       return;
     }
@@ -43,34 +43,30 @@ document.addEventListener("DOMContentLoaded", () => {
       const data = await response.json();
       const jobs = Array.isArray(data.results) ? data.results : [];
 
-      for (const job of jobs) {
+      jobs.forEach(job => {
         if (isUsefulJob(job)) {
           addParsedJob(job);
         } else {
           addReviewJob({
             url: job.url || "",
-            reason: job.error || "The page did not return enough useful job details.",
-            suggestedTitle: job.title || "",
-            suggestedCompany: job.company || "",
+            reason: job.error || "Not enough useful job details were found.",
+            suggestedTitle: safeValue(job.title),
+            suggestedCompany: safeValue(job.company),
           });
         }
-      }
+      });
 
-      renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl);
+      renderAll();
       statusEl.textContent = `Finished. Parsed ${parsedJobs.length} job(s). ${reviewJobs.length} need manual review.`;
     } catch (error) {
-      console.error(error);
+      urls.forEach(url => addReviewJob({
+        url,
+        reason: error.name === "AbortError" ? "Parser timed out." : error.message,
+        suggestedTitle: "",
+        suggestedCompany: "",
+      }));
 
-      for (const url of urls) {
-        addReviewJob({
-          url,
-          reason: error.name === "AbortError" ? "Parser timed out." : error.message,
-          suggestedTitle: "",
-          suggestedCompany: "",
-        });
-      }
-
-      renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl);
+      renderAll();
       statusEl.textContent = "Parser issue. URLs were moved to manual review.";
     } finally {
       setLoading(parseBtn, false, "Parse Jobs");
@@ -81,12 +77,12 @@ document.addEventListener("DOMContentLoaded", () => {
     parsedJobs = [];
     reviewJobs = [];
     urlInput.value = "";
-    renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl);
+    renderAll();
     statusEl.textContent = "Cleared. Paste job URLs to start again.";
   });
 
   copyAllBtn.addEventListener("click", async () => {
-    if (parsedJobs.length === 0) {
+    if (!parsedJobs.length) {
       statusEl.textContent = "No parsed jobs to copy.";
       return;
     }
@@ -95,7 +91,14 @@ document.addEventListener("DOMContentLoaded", () => {
     statusEl.textContent = "Copied all parsed jobs to clipboard.";
   });
 
-  renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl);
+  function renderAll() {
+    renderParsedJobs(resultsEl, statusEl);
+    renderReviewJobs(reviewResultsEl, statusEl);
+    parsedCountEl.textContent = parsedJobs.length;
+    reviewCountEl.textContent = reviewJobs.length;
+  }
+
+  renderAll();
 });
 
 function addParsedJob(job) {
@@ -117,17 +120,25 @@ function addReviewJob(job) {
   if (!alreadyParsed && !alreadyReview) reviewJobs.push(job);
 }
 
-function isUsefulJob(job) {
-  const normalized = normalizeJob(job);
+function normalizeJob(job) {
+  return {
+    company: cleanShort(job.company),
+    title: cleanTitle(job.title),
+    salary: cleanSalary(job.salary),
+    location: cleanLocation(job.location),
+    workType: cleanShort(job.workType),
+    url: cleanUrl(job.url),
+    status: job.status || "parsed",
+    error: job.error || "",
+  };
+}
 
-  const title = normalized.title.toLowerCase();
-  const company = normalized.company.toLowerCase();
-  const location = normalized.location.toLowerCase();
+function isUsefulJob(job) {
+  const j = normalizeJob(job);
 
   const badTitles = [
     "career search",
     "javascript is disabled",
-    "not found",
     "open positions for renton school district 403",
     "teaching jobs, educator jobs, school jobs",
     "finding teaching jobs and other education jobs",
@@ -142,73 +153,47 @@ function isUsefulJob(job) {
     "job-boards",
     "applitrack",
     "schoolspring.com",
-    "not found",
   ];
 
-  const badLocationPhrases = [
-    "search by zip code",
-    "what we offer",
-    "competitive starting wages",
-    "advanced",
-  ];
+  if (!j.title) return false;
+  if (badTitles.includes(j.title.toLowerCase())) return false;
+  if (j.company && badCompanies.includes(j.company.toLowerCase())) return false;
 
-  if (badTitles.includes(title)) return false;
-  if (badCompanies.includes(company)) return false;
-  if (badLocationPhrases.some(phrase => location.includes(phrase))) return false;
+  if (j.title.length > 90) return false;
+  if (j.salary.length > 120) return false;
+  if (j.location.length > 100) return false;
 
-  const hasTitle = normalized.title !== "Not found";
-  const hasCompany = normalized.company !== "Not found";
-  const hasLocation = normalized.location !== "Not found";
-  const hasSalary = normalized.salary !== "Not found";
-
-  return hasTitle && (hasCompany || hasLocation || hasSalary);
-}
-
-function normalizeJob(job) {
-  return {
-    company: cleanValue(job.company) || "Not found",
-    title: cleanValue(job.title) || "Not found",
-    salary: cleanValue(job.salary) || "Not found",
-    location: cleanValue(job.location) || "Not found",
-    workType: cleanValue(job.workType) || "Not found",
-    url: cleanValue(job.url) || "Not found",
-    status: job.status || "parsed",
-    error: job.error || "",
-  };
-}
-
-function renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl) {
-  renderReviewJobs(reviewResultsEl, statusEl);
-  renderParsedJobs(resultsEl, statusEl);
-
-  parsedCountEl.textContent = parsedJobs.length;
-  reviewCountEl.textContent = reviewJobs.length;
+  return Boolean(j.company || j.salary || j.location || j.workType);
 }
 
 function renderParsedJobs(resultsEl, statusEl) {
   resultsEl.innerHTML = "";
 
-  if (parsedJobs.length === 0) {
+  if (!parsedJobs.length) {
     resultsEl.innerHTML = `<p class="hint">No parsed jobs yet.</p>`;
     return;
   }
 
   parsedJobs.forEach((job, index) => {
-    const meta = [job.location, job.salary, job.workType]
-      .filter(value => value && value !== "Not found")
-      .join(" • ");
-
     const card = document.createElement("article");
     card.className = "job-card";
+
+    const details = [
+      job.company ? `<div><strong>Company:</strong> ${escapeHtml(job.company)}</div>` : "",
+      job.title ? `<div><strong>Job Title:</strong> ${escapeHtml(job.title)}</div>` : "",
+      job.salary ? `<div><strong>Salary:</strong> ${escapeHtml(job.salary)}</div>` : "",
+      job.location ? `<div><strong>Location:</strong> ${escapeHtml(job.location)}</div>` : "",
+      job.workType ? `<div><strong>Work Type:</strong> ${escapeHtml(job.workType)}</div>` : "",
+      job.url ? `<div><strong>URL:</strong> <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(job.url)}</a></div>` : "",
+    ].filter(Boolean).join("");
 
     card.innerHTML = `
       <span class="badge parsed">Parsed</span>
 
-      <div class="job-title-line">${escapeHtml(job.title)}</div>
-      <div class="job-company-line">${escapeHtml(job.company)}</div>
-      <div class="job-meta-line">${escapeHtml(meta || "Details incomplete")}</div>
-      <div class="job-url-line">
-        <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(job.url)}</a>
+      <div class="job-title-line">${escapeHtml(job.title || "Untitled Job")}</div>
+
+      <div class="clean-details">
+        ${details}
       </div>
 
       <div class="card-actions">
@@ -226,8 +211,7 @@ function renderParsedJobs(resultsEl, statusEl) {
 
   document.querySelectorAll(".copy-one-btn").forEach(button => {
     button.addEventListener("click", async () => {
-      const index = Number(button.dataset.index);
-      await copyText(formatJob(parsedJobs[index]));
+      await copyText(formatJob(parsedJobs[Number(button.dataset.index)]));
       statusEl.textContent = "Copied job to clipboard.";
     });
   });
@@ -245,7 +229,7 @@ function renderParsedJobs(resultsEl, statusEl) {
   document.querySelectorAll(".remove-parsed-btn").forEach(button => {
     button.addEventListener("click", () => {
       parsedJobs.splice(Number(button.dataset.index), 1);
-      rerender(statusEl, "Removed parsed job.");
+      rerender("Removed parsed job.");
     });
   });
 
@@ -262,7 +246,7 @@ function renderParsedJobs(resultsEl, statusEl) {
       });
 
       parsedJobs.splice(index, 1);
-      rerender(statusEl, "Moved job to manual review.");
+      rerender("Moved job to manual review.");
     });
   });
 }
@@ -270,7 +254,7 @@ function renderParsedJobs(resultsEl, statusEl) {
 function renderReviewJobs(reviewResultsEl, statusEl) {
   reviewResultsEl.innerHTML = "";
 
-  if (reviewJobs.length === 0) {
+  if (!reviewJobs.length) {
     reviewResultsEl.innerHTML = `<p class="hint">No URLs need manual review.</p>`;
     return;
   }
@@ -282,8 +266,8 @@ function renderReviewJobs(reviewResultsEl, statusEl) {
     card.innerHTML = `
       <span class="badge review">Needs Manual Review</span>
       <div class="job-title-line">${escapeHtml(item.suggestedTitle || "Blocked or incomplete job page")}</div>
-      <div class="job-company-line">${escapeHtml(item.suggestedCompany || "Manual details needed")}</div>
-      <div class="job-meta-line">${escapeHtml(item.reason || "Not enough job data was found.")}</div>
+      ${item.suggestedCompany ? `<div class="job-company-line">${escapeHtml(item.suggestedCompany)}</div>` : ""}
+      <div class="job-meta-line">${escapeHtml(item.reason || "Manual details needed.")}</div>
       <p><a class="small-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url)}</a></p>
 
       <textarea class="manual-text" id="manualText-${index}" placeholder="Open the URL, copy the job posting text, and paste it here..."></textarea>
@@ -300,89 +284,81 @@ function renderReviewJobs(reviewResultsEl, statusEl) {
   document.querySelectorAll(".parse-manual-btn").forEach(button => {
     button.addEventListener("click", () => {
       const index = Number(button.dataset.index);
-      const textEl = document.getElementById(`manualText-${index}`);
-      const text = textEl.value.trim();
+      const text = document.getElementById(`manualText-${index}`).value.trim();
 
       if (!text) {
         statusEl.textContent = "Paste job text into the review card first.";
         return;
       }
 
-      const reviewItem = reviewJobs[index];
-      const parsed = parseManualText(text, reviewItem.url);
+      const parsed = parseManualText(text, reviewJobs[index].url);
 
-      addParsedJob(parsed);
-      reviewJobs.splice(index, 1);
-      rerender(statusEl, "Manual job parsed and added.");
+      if (isUsefulJob(parsed)) {
+        addParsedJob(parsed);
+        reviewJobs.splice(index, 1);
+        rerender("Manual job parsed and added.");
+      } else {
+        statusEl.textContent = "Manual text still did not produce enough useful details.";
+      }
     });
   });
 
   document.querySelectorAll(".skip-review-btn").forEach(button => {
     button.addEventListener("click", () => {
       reviewJobs.splice(Number(button.dataset.index), 1);
-      rerender(statusEl, "Removed URL from manual review.");
+      rerender("Removed URL from manual review.");
     });
   });
 }
 
 function parseManualText(text, url) {
-  const lines = text
-    .split(/\n+/)
-    .map(line => line.trim())
-    .filter(Boolean);
-
+  const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
   const clean = text.replace(/\s+/g, " ").trim();
 
   return normalizeJob({
-    url: url || "Not provided",
+    url,
     company: extractManualCompany(clean, lines),
     title: extractManualTitle(clean, lines),
     salary: extractManualSalary(clean),
     location: extractManualLocation(clean),
     workType: extractManualWorkType(clean),
-    status: "parsed",
-    error: "",
   });
 }
 
 function extractManualCompany(text, lines) {
   const patterns = [
-    /\b(Boise Cascade|AAA Washington|Compass Group|Impact Public Schools|American Capital Group|The Bear Creek School|CBRE)\b/i,
+    /\b(Boise Cascade|AAA Washington|Compass Group|Impact Public Schools|American Capital Group|The Bear Creek School|CBRE|Renton School District|Northshore School District)\b/i,
     /Company:\s*([^|]+?)(?=\s+(Job Title|Title|Location|Salary|Description):|$)/i,
     /Organization:\s*([^|]+?)(?=\s+(Job Title|Title|Location|Salary|Description):|$)/i,
     /Employer:\s*([^|]+?)(?=\s+(Job Title|Title|Location|Salary|Description):|$)/i,
   ];
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) return cleanValue(match[1] || match[0]);
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) return cleanShort(m[1] || m[0]);
   }
 
-  const filtered = lines.filter(line => !isJunkLine(line));
-  return cleanValue(filtered[0]) || "Not found";
+  return cleanShort(lines.filter(line => !isJunkLine(line))[0]);
 }
 
 function extractManualTitle(text, lines) {
   const patterns = [
-    /\b(Administrative Specialist|Operations Assistant|Executive Assistant|Office Admin Personnel|Workplace Experience Coordinator|Call Center Scheduler|Middle School Classroom Assistant|Classroom Assistant|Administrative Assistant|Office Assistant|Program Coordinator|Project Coordinator|IT Manager|Service Desk Manager|Endpoint Manager)\b/i,
+    /\b(Administrative Specialist|Operations Assistant|Executive Assistant|Office Admin Personnel|Workplace Experience Coordinator|Call Center Scheduler|Middle School Classroom Assistant|Classroom Assistant|Administrative Assistant|Office Assistant|Program Coordinator|Project Coordinator|Academic Advancement Coordinator|IT Manager|Service Desk Manager|Endpoint Manager)\b/i,
     /Job Title:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
     /Title:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
     /Position:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
     /Role:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
   ];
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) return cleanValue(match[1] || match[0]);
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) return cleanTitle(m[1] || m[0]);
   }
 
-  const filtered = lines.filter(line => !isJunkLine(line));
-  return cleanValue(
-    filtered.find(line =>
-      line.length < 90 &&
-      /assistant|specialist|coordinator|manager|administrator|engineer|analyst|personnel|scheduler/i.test(line)
-    )
-  ) || "Not found";
+  return cleanTitle(lines.filter(line => !isJunkLine(line)).find(line =>
+    line.length < 90 &&
+    /assistant|specialist|coordinator|manager|administrator|engineer|analyst|personnel|scheduler/i.test(line)
+  ));
 }
 
 function extractManualSalary(text) {
@@ -395,29 +371,27 @@ function extractManualSalary(text) {
     /\$[0-9]{2,3}(?:,[0-9]{3})?(?:\.\d{2})?\s*(?:USD\s*)?(?:-|–|to)?\s*\$?[0-9]{0,3}(?:,[0-9]{3})?(?:\.\d{2})?\s*(?:USD)?\s*(?:\/hour|\/hr|per hour|hourly|\/year|\/yr|per year|annually)?/i,
   ];
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) return cleanValue(match[1] || match[0]);
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) return cleanSalary(m[1] || m[0]);
   }
 
-  return "Not found";
+  return "";
 }
 
 function extractManualLocation(text) {
   const patterns = [
     /Locations?Showing\s+\d+\s+location\s+.*?\s+([A-Z][a-zA-Z .'-]+,\s?(WA|OR|CA|TX|NY|FL|GA|TN|AZ|CO|IL|NC|SC|VA|DC))/i,
-    /Location:\s*([^|]+?)(?=\s+(Salary|Benefits|Job|Description|Schedule|Work Type):|$)/i,
     /\b([A-Z][a-zA-Z .'-]+,\s?(WA|OR|CA|TX|NY|FL|GA|TN|AZ|CO|IL|NC|SC|VA|DC))\b/,
   ];
 
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) return cleanValue(match[1] || match[0]);
+  for (const p of patterns) {
+    const m = text.match(p);
+    if (m) return cleanLocation(m[1] || m[0]);
   }
 
-  if (/remote/i.test(text)) return "Remote";
-
-  return "Not found";
+  if (/\bremote\b/i.test(text)) return "Remote";
+  return "";
 }
 
 function extractManualWorkType(text) {
@@ -428,22 +402,22 @@ function extractManualWorkType(text) {
 
   if (/\bhybrid\b/i.test(text)) parts.push("Hybrid");
   else if (/\bremote\b/i.test(text)) parts.push("Remote");
-  else if (/\bon-site\b|\bonsite\b|\bin person\b|\bin-person\b|physical presence/i.test(text)) parts.push("On-site");
+  else if (/\bon-site\b|\bonsite\b|\bin person\b|\bin-person\b/i.test(text)) parts.push("On-site");
 
-  return [...new Set(parts)].join(" / ") || "Not found";
-}
-
-function isJunkLine(line) {
-  return /skip to main content|accessibility|reasonable accommodation|toggle navigation|posting details|job details|description|equal opportunity|1password|parse manual text|results|copy all/i.test(line);
+  return [...new Set(parts)].join(" / ");
 }
 
 function formatJob(job) {
-  return `Company: ${job.company || "Not found"}
-Job Title: ${job.title || "Not found"}
-Salary: ${job.salary || "Not found"}
-Location: ${job.location || "Not found"}
-Work Type: ${job.workType || "Not found"}
-URL: ${job.url || "Not found"}`;
+  const lines = [];
+
+  if (job.company) lines.push(`Company: ${job.company}`);
+  if (job.title) lines.push(`Job Title: ${job.title}`);
+  if (job.salary) lines.push(`Salary: ${job.salary}`);
+  if (job.location) lines.push(`Location: ${job.location}`);
+  if (job.workType) lines.push(`Work Type: ${job.workType}`);
+  if (job.url) lines.push(`URL: ${job.url}`);
+
+  return lines.join("\n");
 }
 
 function getUrls(text) {
@@ -454,24 +428,67 @@ function getUrls(text) {
     .filter((item, index, arr) => arr.indexOf(item) === index);
 }
 
-function rerender(statusEl, message) {
-  renderAll(
-    document.getElementById("results"),
-    document.getElementById("reviewResults"),
-    statusEl,
-    document.getElementById("parsedCount"),
-    document.getElementById("reviewCount")
-  );
-
-  statusEl.textContent = message;
+function rerender(message) {
+  renderParsedJobs(document.getElementById("results"), document.getElementById("status"));
+  renderReviewJobs(document.getElementById("reviewResults"), document.getElementById("status"));
+  document.getElementById("parsedCount").textContent = parsedJobs.length;
+  document.getElementById("reviewCount").textContent = reviewJobs.length;
+  document.getElementById("status").textContent = message;
 }
 
-function cleanValue(value) {
-  return String(value || "")
+function safeValue(value) {
+  const cleaned = cleanShort(value);
+  return cleaned.toLowerCase() === "not found" ? "" : cleaned;
+}
+
+function cleanShort(value) {
+  const cleaned = String(value || "")
     .replace(/\s+/g, " ")
     .replace(/^\s*[-:|]\s*/, "")
-    .trim()
-    .slice(0, 220);
+    .trim();
+
+  if (!cleaned || cleaned.toLowerCase() === "not found") return "";
+  return cleaned.slice(0, 90);
+}
+
+function cleanTitle(value) {
+  const cleaned = cleanShort(value)
+    .replace(/\s*Job Details$/i, "")
+    .replace(/\s*\(FULL TIME\)/i, "")
+    .trim();
+
+  if (cleaned.length > 90) return "";
+  return cleaned;
+}
+
+function cleanSalary(value) {
+  const cleaned = String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned.toLowerCase() === "not found") return "";
+  return cleaned.slice(0, 120);
+}
+
+function cleanLocation(value) {
+  const cleaned = cleanShort(value);
+
+  if (/search by zip code|competitive starting wages|what we offer|advanced/i.test(cleaned)) {
+    return "";
+  }
+
+  const cityState = cleaned.match(/\b([A-Z][a-zA-Z .'-]+,\s?(WA|OR|CA|TX|NY|FL|GA|TN|AZ|CO|IL|NC|SC|VA|DC))\b/);
+  return cityState ? cityState[0] : cleaned;
+}
+
+function cleanUrl(value) {
+  const cleaned = String(value || "").trim();
+  if (!cleaned || cleaned.toLowerCase() === "not found") return "";
+  return cleaned;
+}
+
+function isJunkLine(line) {
+  return /skip to main content|accessibility|reasonable accommodation|toggle navigation|posting details|job details|description|equal opportunity|1password|parse manual text|results|copy all/i.test(line);
 }
 
 function setLoading(button, isLoading, label) {
