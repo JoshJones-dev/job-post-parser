@@ -12,7 +12,7 @@
       <p class="eyebrow">Job Application Tool</p>
       <h1>Job Post Parser</h1>
       <p class="subtitle">
-        Paste multiple job URLs, parse the details, and copy everything in a clean format.
+        Paste job URLs, parse what we can automatically, then fix blocked pages with manual paste.
       </p>
     </section>
 
@@ -26,8 +26,20 @@
       </div>
 
       <p class="hint">
-        Some job sites may block automatic parsing. If that happens, the URL will still be saved and shown.
+        Some job boards block automatic parsing. Use manual fallback below when needed.
       </p>
+    </section>
+
+    <section class="panel">
+      <label for="manualUrlInput">Manual fallback URL</label>
+      <input id="manualUrlInput" type="url" placeholder="Paste the original job URL here" />
+
+      <label for="manualTextInput" class="manual-label">Paste job post text</label>
+      <textarea id="manualTextInput" placeholder="Paste the job description text here..."></textarea>
+
+      <div class="actions">
+        <button id="parseTextBtn">Parse Manual Text</button>
+      </div>
     </section>
 
     <section class="panel output-panel">
