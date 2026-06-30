@@ -1,235 +1,60 @@
-:root {
-  --bg: #0d1117;
-  --panel: #161b22;
-  --panel-2: #1f2630;
-  --text: #f0f6fc;
-  --muted: #8b949e;
-  --border: #30363d;
-  --accent: #7c3aed;
-  --accent-hover: #6d28d9;
-  --good: #22c55e;
-  --bad: #ef4444;
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Post Parser</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <section class="hero">
+      <p class="eyebrow">Job Application Tool</p>
+      <h1>Job Post Parser</h1>
+      <p class="subtitle">
+        Paste job URLs, automatically parse what works, and review blocked pages manually.
+      </p>
+    </section>
 
-* {
-  box-sizing: border-box;
-}
+    <section class="panel">
+      <label for="urlInput">Paste job URLs</label>
+      <textarea id="urlInput" placeholder="https://company.com/job/123&#10;https://another-company.com/jobs/456"></textarea>
 
-body {
-  margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  background:
-    radial-gradient(circle at top left, rgba(124, 58, 237, 0.22), transparent 32rem),
-    var(--bg);
-  color: var(--text);
-}
+      <div class="actions">
+        <button id="parseBtn">Parse Jobs</button>
+        <button id="clearBtn" class="secondary">Clear Everything</button>
+      </div>
 
-.app {
-  width: min(1100px, calc(100% - 32px));
-  margin: 0 auto;
-  padding: 48px 0;
-}
+      <p class="hint">
+        Parsed jobs appear below. Blocked or empty results go to Needs Manual Review.
+      </p>
+    </section>
 
-.hero {
-  margin-bottom: 28px;
-}
+    <section class="panel review-panel">
+      <div class="output-header">
+        <h2>Needs Manual Review</h2>
+        <span id="reviewCount" class="count-pill">0</span>
+      </div>
+      <p class="hint">
+        These URLs did not return enough useful data. Open the URL, copy the job posting text, paste it into the card, then click Parse Manual Text.
+      </p>
+      <div id="reviewResults" class="results"></div>
+    </section>
 
-.eyebrow {
-  margin: 0 0 8px;
-  color: var(--accent);
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+    <section class="panel output-panel">
+      <div class="output-header">
+        <h2>Parsed Jobs</h2>
+        <div class="header-actions">
+          <span id="parsedCount" class="count-pill">0</span>
+          <button id="copyAllBtn" class="secondary">Copy All</button>
+        </div>
+      </div>
 
-h1 {
-  margin: 0;
-  font-size: clamp(2.3rem, 6vw, 4.5rem);
-  line-height: 1;
-}
+      <div id="status" class="status">No jobs parsed yet.</div>
+      <div id="results" class="results"></div>
+    </section>
+  </main>
 
-.subtitle {
-  max-width: 720px;
-  color: var(--muted);
-  font-size: 1.1rem;
-  line-height: 1.6;
-}
-
-.panel {
-  background: rgba(22, 27, 34, 0.9);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  padding: 22px;
-  margin-bottom: 20px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.25);
-}
-
-label {
-  display: block;
-  margin-bottom: 10px;
-  font-weight: 700;
-}
-
-.manual-label {
-  margin-top: 16px;
-}
-
-textarea,
-input {
-  width: 100%;
-  padding: 16px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: #0b1017;
-  color: var(--text);
-  font-size: 1rem;
-  line-height: 1.5;
-  outline: none;
-}
-
-textarea {
-  min-height: 170px;
-  resize: vertical;
-}
-
-textarea:focus,
-input:focus {
-  border-color: var(--accent);
-}
-
-.actions,
-.output-header {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  margin-top: 16px;
-}
-
-.output-header {
-  justify-content: space-between;
-  margin-top: 0;
-  margin-bottom: 16px;
-}
-
-button {
-  border: 0;
-  border-radius: 12px;
-  padding: 12px 16px;
-  background: var(--accent);
-  color: white;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-button:hover {
-  background: var(--accent-hover);
-}
-
-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-button.secondary {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--border);
-}
-
-button.secondary:hover {
-  background: #2a3340;
-}
-
-.hint,
-.status {
-  color: var(--muted);
-  font-size: 0.95rem;
-}
-
-.results {
-  display: grid;
-  gap: 14px;
-}
-
-.job-card {
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: #0b1017;
-  padding: 18px;
-}
-
-.job-card h3 {
-  margin: 0 0 12px;
-  font-size: 1.25rem;
-}
-
-.job-grid {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 8px 14px;
-  margin-bottom: 14px;
-}
-
-.key {
-  color: var(--muted);
-  font-weight: 700;
-}
-
-.value {
-  color: var(--text);
-  word-break: break-word;
-}
-
-.value a {
-  color: #a78bfa;
-}
-
-.badge {
-  display: inline-block;
-  margin-bottom: 12px;
-  padding: 5px 9px;
-  border-radius: 999px;
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
-.badge.parsed {
-  background: rgba(34, 197, 94, 0.15);
-  color: var(--good);
-}
-
-.badge.failed {
-  background: rgba(239, 68, 68, 0.15);
-  color: var(--bad);
-}
-
-.card-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.copy-text {
-  width: 100%;
-  min-height: 130px;
-  margin-top: 12px;
-  font-family: Consolas, Monaco, monospace;
-  font-size: 0.9rem;
-}
-
-@media (max-width: 700px) {
-  .job-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .actions,
-  .output-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  button {
-    width: 100%;
-  }
-}
+  <script src="script.js"></script>
+</body>
+</html>
