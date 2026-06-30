@@ -71,10 +71,13 @@ label {
   font-weight: 700;
 }
 
-textarea {
+.manual-label {
+  margin-top: 16px;
+}
+
+textarea,
+input {
   width: 100%;
-  min-height: 170px;
-  resize: vertical;
   padding: 16px;
   border-radius: 14px;
   border: 1px solid var(--border);
@@ -85,7 +88,13 @@ textarea {
   outline: none;
 }
 
-textarea:focus {
+textarea {
+  min-height: 170px;
+  resize: vertical;
+}
+
+textarea:focus,
+input:focus {
   border-color: var(--accent);
 }
 
@@ -170,6 +179,10 @@ button.secondary:hover {
 .value {
   color: var(--text);
   word-break: break-word;
+}
+
+.value a {
+  color: #a78bfa;
 }
 
 .badge {
