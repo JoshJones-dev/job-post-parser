@@ -71,10 +71,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl);
-      statusEl.textContent =
-        error.name === "AbortError"
-          ? "Parser timed out. URLs were moved to manual review."
-          : `Parser error. URLs were moved to manual review.`;
+      statusEl.textContent = "Parser issue. URLs were moved to manual review.";
     } finally {
       setLoading(parseBtn, false, "Parse Jobs");
     }
@@ -86,7 +83,6 @@ document.addEventListener("DOMContentLoaded", () => {
     urlInput.value = "";
     renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl);
     statusEl.textContent = "Cleared. Paste job URLs to start again.";
-    setLoading(parseBtn, false, "Parse Jobs");
   });
 
   copyAllBtn.addEventListener("click", async () => {
@@ -105,9 +101,11 @@ document.addEventListener("DOMContentLoaded", () => {
 function addParsedJob(job) {
   const normalized = normalizeJob(job);
 
-  if (!parsedJobs.some(existing => existing.url === normalized.url && existing.title === normalized.title)) {
-    parsedJobs.push(normalized);
-  }
+  const duplicate = parsedJobs.some(existing =>
+    existing.url === normalized.url && existing.title === normalized.title
+  );
+
+  if (!duplicate) parsedJobs.push(normalized);
 }
 
 function addReviewJob(job) {
@@ -116,24 +114,21 @@ function addReviewJob(job) {
   const alreadyParsed = parsedJobs.some(existing => existing.url === job.url);
   const alreadyReview = reviewJobs.some(existing => existing.url === job.url);
 
-  if (!alreadyParsed && !alreadyReview) {
-    reviewJobs.push(job);
-  }
+  if (!alreadyParsed && !alreadyReview) reviewJobs.push(job);
 }
 
 function isUsefulJob(job) {
   const normalized = normalizeJob(job);
 
-  const hasTitle = normalized.title && normalized.title !== "Not found";
-  const hasCompany = normalized.company && normalized.company !== "Not found";
-  const hasLocation = normalized.location && normalized.location !== "Not found";
-  const hasSalary = normalized.salary && normalized.salary !== "Not found";
+  const title = normalized.title.toLowerCase();
+  const company = normalized.company.toLowerCase();
+  const location = normalized.location.toLowerCase();
 
   const badTitles = [
     "career search",
     "javascript is disabled",
     "not found",
-    "open positions",
+    "open positions for renton school district 403",
     "teaching jobs, educator jobs, school jobs",
     "finding teaching jobs and other education jobs",
   ];
@@ -146,11 +141,25 @@ function isUsefulJob(job) {
     "jobs",
     "job-boards",
     "applitrack",
+    "schoolspring.com",
     "not found",
   ];
 
-  if (badTitles.includes(normalized.title.toLowerCase())) return false;
-  if (badCompanies.includes(normalized.company.toLowerCase()) && !hasTitle) return false;
+  const badLocationPhrases = [
+    "search by zip code",
+    "what we offer",
+    "competitive starting wages",
+    "advanced",
+  ];
+
+  if (badTitles.includes(title)) return false;
+  if (badCompanies.includes(company)) return false;
+  if (badLocationPhrases.some(phrase => location.includes(phrase))) return false;
+
+  const hasTitle = normalized.title !== "Not found";
+  const hasCompany = normalized.company !== "Not found";
+  const hasLocation = normalized.location !== "Not found";
+  const hasSalary = normalized.salary !== "Not found";
 
   return hasTitle && (hasCompany || hasLocation || hasSalary);
 }
@@ -169,61 +178,43 @@ function normalizeJob(job) {
 }
 
 function renderAll(resultsEl, reviewResultsEl, statusEl, parsedCountEl, reviewCountEl) {
-  renderReviewJobs(reviewResultsEl, resultsEl, statusEl, parsedCountEl, reviewCountEl);
-  renderParsedJobs(resultsEl, statusEl, parsedCountEl, reviewCountEl);
+  renderReviewJobs(reviewResultsEl, statusEl);
+  renderParsedJobs(resultsEl, statusEl);
 
   parsedCountEl.textContent = parsedJobs.length;
   reviewCountEl.textContent = reviewJobs.length;
 }
 
-function renderParsedJobs(resultsEl, statusEl, parsedCountEl, reviewCountEl) {
+function renderParsedJobs(resultsEl, statusEl) {
   resultsEl.innerHTML = "";
 
   if (parsedJobs.length === 0) {
+    resultsEl.innerHTML = `<p class="hint">No parsed jobs yet.</p>`;
     return;
   }
 
   parsedJobs.forEach((job, index) => {
+    const meta = [job.location, job.salary, job.workType]
+      .filter(value => value && value !== "Not found")
+      .join(" • ");
+
     const card = document.createElement("article");
     card.className = "job-card";
 
     card.innerHTML = `
       <span class="badge parsed">Parsed</span>
 
-      <div class="job-summary">
-        <div class="job-title-line">${escapeHtml(job.title)}</div>
-        <div class="job-company-line">${escapeHtml(job.company)}</div>
-        <div class="job-meta-line">${escapeHtml([job.location, job.salary, job.workType].filter(v => v && v !== "Not found").join(" • ") || "Details incomplete")}</div>
-      </div>
-
-      <div class="job-grid">
-        <div class="key">Company</div>
-        <div class="value">${escapeHtml(job.company)}</div>
-
-        <div class="key">Job Title</div>
-        <div class="value">${escapeHtml(job.title)}</div>
-
-        <div class="key">Salary</div>
-        <div class="value">${escapeHtml(job.salary)}</div>
-
-        <div class="key">Location</div>
-        <div class="value">${escapeHtml(job.location)}</div>
-
-        <div class="key">Work Type</div>
-        <div class="value">${escapeHtml(job.workType)}</div>
-
-        <div class="key">URL</div>
-        <div class="value">
-          <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer">
-            ${escapeHtml(job.url)}
-          </a>
-        </div>
+      <div class="job-title-line">${escapeHtml(job.title)}</div>
+      <div class="job-company-line">${escapeHtml(job.company)}</div>
+      <div class="job-meta-line">${escapeHtml(meta || "Details incomplete")}</div>
+      <div class="job-url-line">
+        <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(job.url)}</a>
       </div>
 
       <div class="card-actions">
         <button class="copy-one-btn" data-index="${index}">Copy Job</button>
         <button class="secondary show-text-btn" data-index="${index}">Show Copy Text</button>
-        <button class="secondary edit-btn" data-index="${index}">Edit Fields</button>
+        <button class="secondary edit-btn" data-index="${index}">Edit / Review</button>
         <button class="danger remove-parsed-btn" data-index="${index}">Remove</button>
       </div>
 
@@ -253,36 +244,30 @@ function renderParsedJobs(resultsEl, statusEl, parsedCountEl, reviewCountEl) {
 
   document.querySelectorAll(".remove-parsed-btn").forEach(button => {
     button.addEventListener("click", () => {
-      const index = Number(button.dataset.index);
-      parsedJobs.splice(index, 1);
-      renderAll(
-        document.getElementById("results"),
-        document.getElementById("reviewResults"),
-        document.getElementById("status"),
-        document.getElementById("parsedCount"),
-        document.getElementById("reviewCount")
-      );
-      statusEl.textContent = "Removed parsed job.";
+      parsedJobs.splice(Number(button.dataset.index), 1);
+      rerender(statusEl, "Removed parsed job.");
     });
   });
 
   document.querySelectorAll(".edit-btn").forEach(button => {
     button.addEventListener("click", () => {
       const index = Number(button.dataset.index);
-      moveParsedToReview(index);
-      renderAll(
-        document.getElementById("results"),
-        document.getElementById("reviewResults"),
-        document.getElementById("status"),
-        document.getElementById("parsedCount"),
-        document.getElementById("reviewCount")
-      );
-      statusEl.textContent = "Moved job to manual review.";
+      const job = parsedJobs[index];
+
+      reviewJobs.push({
+        url: job.url,
+        reason: "Moved here for manual correction.",
+        suggestedTitle: job.title,
+        suggestedCompany: job.company,
+      });
+
+      parsedJobs.splice(index, 1);
+      rerender(statusEl, "Moved job to manual review.");
     });
   });
 }
 
-function renderReviewJobs(reviewResultsEl, resultsEl, statusEl, parsedCountEl, reviewCountEl) {
+function renderReviewJobs(reviewResultsEl, statusEl) {
   reviewResultsEl.innerHTML = "";
 
   if (reviewJobs.length === 0) {
@@ -296,8 +281,9 @@ function renderReviewJobs(reviewResultsEl, resultsEl, statusEl, parsedCountEl, r
 
     card.innerHTML = `
       <span class="badge review">Needs Manual Review</span>
-      <h3>${escapeHtml(item.suggestedTitle || "Blocked or incomplete job page")}</h3>
-      <p class="hint">${escapeHtml(item.reason || "Not enough job data was found.")}</p>
+      <div class="job-title-line">${escapeHtml(item.suggestedTitle || "Blocked or incomplete job page")}</div>
+      <div class="job-company-line">${escapeHtml(item.suggestedCompany || "Manual details needed")}</div>
+      <div class="job-meta-line">${escapeHtml(item.reason || "Not enough job data was found.")}</div>
       <p><a class="small-link" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url)}</a></p>
 
       <textarea class="manual-text" id="manualText-${index}" placeholder="Open the URL, copy the job posting text, and paste it here..."></textarea>
@@ -327,48 +313,16 @@ function renderReviewJobs(reviewResultsEl, resultsEl, statusEl, parsedCountEl, r
 
       addParsedJob(parsed);
       reviewJobs.splice(index, 1);
-
-      renderAll(
-        document.getElementById("results"),
-        document.getElementById("reviewResults"),
-        document.getElementById("status"),
-        document.getElementById("parsedCount"),
-        document.getElementById("reviewCount")
-      );
-
-      statusEl.textContent = "Manual job parsed and added to Parsed Jobs.";
+      rerender(statusEl, "Manual job parsed and added.");
     });
   });
 
   document.querySelectorAll(".skip-review-btn").forEach(button => {
     button.addEventListener("click", () => {
-      const index = Number(button.dataset.index);
-      reviewJobs.splice(index, 1);
-
-      renderAll(
-        document.getElementById("results"),
-        document.getElementById("reviewResults"),
-        document.getElementById("status"),
-        document.getElementById("parsedCount"),
-        document.getElementById("reviewCount")
-      );
-
-      statusEl.textContent = "Removed URL from manual review.";
+      reviewJobs.splice(Number(button.dataset.index), 1);
+      rerender(statusEl, "Removed URL from manual review.");
     });
   });
-}
-
-function moveParsedToReview(index) {
-  const job = parsedJobs[index];
-
-  reviewJobs.push({
-    url: job.url,
-    reason: "Moved here for manual correction.",
-    suggestedTitle: job.title,
-    suggestedCompany: job.company,
-  });
-
-  parsedJobs.splice(index, 1);
 }
 
 function parseManualText(text, url) {
@@ -392,41 +346,43 @@ function parseManualText(text, url) {
 }
 
 function extractManualCompany(text, lines) {
-  const companyPatterns = [
+  const patterns = [
+    /\b(Boise Cascade|AAA Washington|Compass Group|Impact Public Schools|American Capital Group|The Bear Creek School|CBRE)\b/i,
     /Company:\s*([^|]+?)(?=\s+(Job Title|Title|Location|Salary|Description):|$)/i,
     /Organization:\s*([^|]+?)(?=\s+(Job Title|Title|Location|Salary|Description):|$)/i,
     /Employer:\s*([^|]+?)(?=\s+(Job Title|Title|Location|Salary|Description):|$)/i,
-    /\b(Boise Cascade|AAA Washington|Compass Group|Impact Public Schools|American Capital Group|The Bear Creek School|CBRE)\b/i,
   ];
 
-  for (const pattern of companyPatterns) {
+  for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) return cleanValue(match[1] || match[0]);
   }
-
-  const aboutMatch = text.match(/Description\s+([A-Z][A-Za-z0-9 &.'-]{2,80})\s+(?:Company|has|is|was)/i);
-  if (aboutMatch) return cleanValue(aboutMatch[1]);
 
   const filtered = lines.filter(line => !isJunkLine(line));
   return cleanValue(filtered[0]) || "Not found";
 }
 
 function extractManualTitle(text, lines) {
-  const titlePatterns = [
+  const patterns = [
+    /\b(Administrative Specialist|Operations Assistant|Executive Assistant|Office Admin Personnel|Workplace Experience Coordinator|Call Center Scheduler|Middle School Classroom Assistant|Classroom Assistant|Administrative Assistant|Office Assistant|Program Coordinator|Project Coordinator|IT Manager|Service Desk Manager|Endpoint Manager)\b/i,
     /Job Title:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
     /Title:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
     /Position:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
     /Role:\s*([^|]+?)(?=\s+(Company|Location|Salary|Description):|$)/i,
-    /\b(Administrative Specialist|Operations Assistant|Executive Assistant|Office Admin Personnel|Workplace Experience Coordinator|Call Center Scheduler|Middle School Classroom Assistant|Classroom Assistant|Administrative Assistant|Office Assistant|Program Coordinator|Project Coordinator|IT Manager|Service Desk Manager|Endpoint Manager)\b/i,
   ];
 
-  for (const pattern of titlePatterns) {
+  for (const pattern of patterns) {
     const match = text.match(pattern);
     if (match) return cleanValue(match[1] || match[0]);
   }
 
   const filtered = lines.filter(line => !isJunkLine(line));
-  return cleanValue(filtered.find(line => line.length < 90 && /assistant|specialist|coordinator|manager|administrator|engineer|analyst|personnel|scheduler/i.test(line))) || "Not found";
+  return cleanValue(
+    filtered.find(line =>
+      line.length < 90 &&
+      /assistant|specialist|coordinator|manager|administrator|engineer|analyst|personnel|scheduler/i.test(line)
+    )
+  ) || "Not found";
 }
 
 function extractManualSalary(text) {
@@ -465,11 +421,16 @@ function extractManualLocation(text) {
 }
 
 function extractManualWorkType(text) {
-  if (/hybrid/i.test(text)) return "Hybrid";
-  if (/remote/i.test(text)) return "Remote";
-  if (/on-site|onsite|in person|in-person|physical presence/i.test(text)) return "On-site";
-  if (/full-time/i.test(text)) return "Full-Time";
-  return "Not found";
+  const parts = [];
+
+  if (/\bfull-time\b|\bfull time\b/i.test(text)) parts.push("Full-Time");
+  if (/\bpart-time\b|\bpart time\b/i.test(text)) parts.push("Part-Time");
+
+  if (/\bhybrid\b/i.test(text)) parts.push("Hybrid");
+  else if (/\bremote\b/i.test(text)) parts.push("Remote");
+  else if (/\bon-site\b|\bonsite\b|\bin person\b|\bin-person\b|physical presence/i.test(text)) parts.push("On-site");
+
+  return [...new Set(parts)].join(" / ") || "Not found";
 }
 
 function isJunkLine(line) {
@@ -477,27 +438,12 @@ function isJunkLine(line) {
 }
 
 function formatJob(job) {
-  return `==================================================
-
-Company:
-${job.company || "Not found"}
-
-Job Title:
-${job.title || "Not found"}
-
-Salary:
-${job.salary || "Not found"}
-
-Location:
-${job.location || "Not found"}
-
-Work Type:
-${job.workType || "Not found"}
-
-URL:
-${job.url || "Not found"}
-
-==================================================`;
+  return `Company: ${job.company || "Not found"}
+Job Title: ${job.title || "Not found"}
+Salary: ${job.salary || "Not found"}
+Location: ${job.location || "Not found"}
+Work Type: ${job.workType || "Not found"}
+URL: ${job.url || "Not found"}`;
 }
 
 function getUrls(text) {
@@ -506,6 +452,18 @@ function getUrls(text) {
     .map(item => item.trim())
     .filter(item => item.startsWith("http://") || item.startsWith("https://"))
     .filter((item, index, arr) => arr.indexOf(item) === index);
+}
+
+function rerender(statusEl, message) {
+  renderAll(
+    document.getElementById("results"),
+    document.getElementById("reviewResults"),
+    statusEl,
+    document.getElementById("parsedCount"),
+    document.getElementById("reviewCount")
+  );
+
+  statusEl.textContent = message;
 }
 
 function cleanValue(value) {
