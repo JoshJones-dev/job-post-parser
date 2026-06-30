@@ -12,7 +12,7 @@
       <p class="eyebrow">Job Application Tool</p>
       <h1>Job Post Parser</h1>
       <p class="subtitle">
-        Paste job URLs, parse what we can automatically, then fix blocked pages with manual paste.
+        Paste job URLs, automatically parse what works, and review blocked pages manually.
       </p>
     </section>
 
@@ -22,30 +22,32 @@
 
       <div class="actions">
         <button id="parseBtn">Parse Jobs</button>
-        <button id="clearBtn" class="secondary">Clear</button>
+        <button id="clearBtn" class="secondary">Clear Everything</button>
       </div>
 
       <p class="hint">
-        Some job boards block automatic parsing. Use manual fallback below when needed.
+        Parsed jobs appear below. Blocked or empty results go to Needs Manual Review.
       </p>
     </section>
 
-    <section class="panel">
-      <label for="manualUrlInput">Manual fallback URL</label>
-      <input id="manualUrlInput" type="url" placeholder="Paste the original job URL here" />
-
-      <label for="manualTextInput" class="manual-label">Paste job post text</label>
-      <textarea id="manualTextInput" placeholder="Paste the job description text here..."></textarea>
-
-      <div class="actions">
-        <button id="parseTextBtn">Parse Manual Text</button>
+    <section class="panel review-panel">
+      <div class="output-header">
+        <h2>Needs Manual Review</h2>
+        <span id="reviewCount" class="count-pill">0</span>
       </div>
+      <p class="hint">
+        These URLs did not return enough useful data. Open the URL, copy the job posting text, paste it into the card, then click Parse Manual Text.
+      </p>
+      <div id="reviewResults" class="results"></div>
     </section>
 
     <section class="panel output-panel">
       <div class="output-header">
-        <h2>Results</h2>
-        <button id="copyAllBtn" class="secondary">Copy All</button>
+        <h2>Parsed Jobs</h2>
+        <div class="header-actions">
+          <span id="parsedCount" class="count-pill">0</span>
+          <button id="copyAllBtn" class="secondary">Copy All</button>
+        </div>
       </div>
 
       <div id="status" class="status">No jobs parsed yet.</div>
