@@ -1,201 +1,226 @@
-export default {
-  async fetch(request) {
-    const corsHeaders = {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    };
+const WORKER_URL = "https://workernamejob-post-parser-api.joshua-mjones.workers.dev/";
 
-    if (request.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+let parsedJobs = [];
 
-    if (request.method !== "POST") {
-      return Response.json({ error: "Use POST with { urls: [...] }" }, { status: 405, headers: corsHeaders });
-    }
+document.addEventListener("DOMContentLoaded", () => {
+  const urlInput = document.getElementById("urlInput");
+  const parseBtn = document.getElementById("parseBtn");
+  const clearBtn = document.getElementById("clearBtn");
+  const copyAllBtn = document.getElementById("copyAllBtn");
+  const statusEl = document.getElementById("status");
+  const resultsEl = document.getElementById("results");
 
-    try {
-      const { urls } = await request.json();
-      const results = await Promise.all((urls || []).map(parseJobUrl));
-      return Response.json({ results }, { headers: corsHeaders });
-    } catch (error) {
-      return Response.json({ error: error.message }, { status: 500, headers: corsHeaders });
-    }
-  },
-};
-
-async function parseJobUrl(url) {
-  const result = {
-    url,
-    company: "",
-    title: "",
-    salary: "",
-    location: "",
-    workType: "",
-    status: "parsed",
-    error: "",
-  };
-
-  try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      },
-    });
-
-    const html = await response.text();
-    const text = cleanText(html);
-    const jsonLd = extractJsonLd(html);
-
-    result.title =
-      pick(jsonLd.title, meta(html, "og:title"), h1(html), titleTag(html));
-
-    result.company =
-      pick(jsonLd.company, jsonLd.hiringOrganization, meta(html, "og:site_name"), companyFromText(text), companyFromUrl(url));
-
-    result.salary =
-      pick(jsonLd.salary, extractSalary(text));
-
-    result.location =
-      pick(jsonLd.location, extractLocation(text));
-
-    result.workType = extractWorkType(text);
-
-    result.title = cleanTitle(result.title);
-    result.company = cleanCompany(result.company, url);
-
-    return result;
-  } catch (error) {
-    result.status = "failed";
-    result.error = "Could not fetch this page. Paste the job text manually.";
-    return result;
+  if (!urlInput || !parseBtn || !clearBtn || !copyAllBtn || !statusEl || !resultsEl) {
+    console.error("Missing HTML elements. Check index.html IDs.");
+    return;
   }
-}
 
-function extractJsonLd(html) {
-  const out = {};
-  const blocks = html.match(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi) || [];
+  parseBtn.addEventListener("click", async () => {
+    const urls = getUrls(urlInput.value);
 
-  for (const block of blocks) {
+    if (urls.length === 0) {
+      statusEl.textContent = "Paste at least one job URL first.";
+      return;
+    }
+
+    setLoading(true, parseBtn);
+    statusEl.textContent = `Parsing ${urls.length} URL(s)...`;
+    resultsEl.innerHTML = "";
+
     try {
-      const raw = block.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, "").trim();
-      const data = JSON.parse(raw);
-      const items = Array.isArray(data) ? data : [data];
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 20000);
 
-      for (const item of items) {
-        const job = item["@type"] === "JobPosting" ? item : null;
-        if (!job) continue;
+      const response = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ urls }),
+        signal: controller.signal,
+      });
 
-        out.title = job.title;
-        out.company = job.hiringOrganization?.name;
-        out.hiringOrganization = job.hiringOrganization?.name;
+      clearTimeout(timeout);
 
-        if (job.jobLocation) {
-          const loc = Array.isArray(job.jobLocation) ? job.jobLocation[0] : job.jobLocation;
-          const addr = loc.address || {};
-          out.location = [addr.addressLocality, addr.addressRegion].filter(Boolean).join(", ");
-        }
-
-        if (job.baseSalary) {
-          const val = job.baseSalary.value || {};
-          out.salary = val.minValue && val.maxValue
-            ? `$${val.minValue} - $${val.maxValue}`
-            : val.value ? `$${val.value}` : "";
-        }
+      if (!response.ok) {
+        throw new Error(`Parser API returned ${response.status}`);
       }
-    } catch {}
+
+      const data = await response.json();
+
+      parsedJobs = Array.isArray(data.results) ? data.results : [];
+
+      renderResults(parsedJobs, resultsEl, statusEl);
+
+      statusEl.textContent = `Parsed ${parsedJobs.length} job(s).`;
+    } catch (error) {
+      console.error(error);
+
+      if (error.name === "AbortError") {
+        statusEl.textContent = "The parser timed out. Try fewer URLs at once.";
+      } else {
+        statusEl.textContent = `Parser error: ${error.message}`;
+      }
+    } finally {
+      setLoading(false, parseBtn);
+    }
+  });
+
+  clearBtn.addEventListener("click", () => {
+    parsedJobs = [];
+    urlInput.value = "";
+    resultsEl.innerHTML = "";
+    statusEl.textContent = "Cleared. Paste job URLs to start again.";
+    setLoading(false, parseBtn);
+  });
+
+  copyAllBtn.addEventListener("click", async () => {
+    if (parsedJobs.length === 0) {
+      statusEl.textContent = "No parsed jobs to copy.";
+      return;
+    }
+
+    const text = parsedJobs.map(formatJob).join("\n\n");
+    await copyText(text);
+    statusEl.textContent = "Copied all jobs to clipboard.";
+  });
+});
+
+function setLoading(isLoading, parseBtn) {
+  parseBtn.disabled = isLoading;
+  parseBtn.textContent = isLoading ? "Parsing..." : "Parse Jobs";
+}
+
+function getUrls(text) {
+  return text
+    .split(/\s+/)
+    .map(item => item.trim())
+    .filter(item => item.startsWith("http://") || item.startsWith("https://"))
+    .filter((item, index, arr) => arr.indexOf(item) === index);
+}
+
+function renderResults(jobs, resultsEl, statusEl) {
+  resultsEl.innerHTML = "";
+
+  if (jobs.length === 0) {
+    statusEl.textContent = "No jobs found.";
+    return;
   }
 
-  return out;
+  jobs.forEach((job, index) => {
+    const card = document.createElement("article");
+    card.className = "job-card";
+
+    const copyTextValue = formatJob(job);
+
+    card.innerHTML = `
+      <span class="badge ${job.status === "failed" ? "failed" : "parsed"}">
+        ${job.status === "failed" ? "Needs Manual Review" : "Parsed"}
+      </span>
+
+      <h3>${escapeHtml(job.title || "Untitled Job")}</h3>
+
+      <div class="job-grid">
+        <div class="key">Company</div>
+        <div class="value">${escapeHtml(job.company || "Not found")}</div>
+
+        <div class="key">Job Title</div>
+        <div class="value">${escapeHtml(job.title || "Not found")}</div>
+
+        <div class="key">Salary</div>
+        <div class="value">${escapeHtml(job.salary || "Not found")}</div>
+
+        <div class="key">Location</div>
+        <div class="value">${escapeHtml(job.location || "Not found")}</div>
+
+        <div class="key">Work Type</div>
+        <div class="value">${escapeHtml(job.workType || "Not found")}</div>
+
+        <div class="key">URL</div>
+        <div class="value">
+          <a href="${escapeHtml(job.url)}" target="_blank" rel="noopener noreferrer">
+            ${escapeHtml(job.url)}
+          </a>
+        </div>
+      </div>
+
+      ${job.error ? `<p class="hint">${escapeHtml(job.error)}</p>` : ""}
+
+      <div class="card-actions">
+        <button class="copy-one-btn" data-index="${index}">Copy Job</button>
+        <button class="secondary show-text-btn" data-index="${index}">Show Copy Text</button>
+      </div>
+
+      <textarea class="copy-text" id="copyText-${index}" style="display:none;" readonly>${escapeHtml(copyTextValue)}</textarea>
+    `;
+
+    resultsEl.appendChild(card);
+  });
+
+  document.querySelectorAll(".copy-one-btn").forEach(button => {
+    button.addEventListener("click", async () => {
+      const index = Number(button.dataset.index);
+      await copyText(formatJob(parsedJobs[index]));
+      statusEl.textContent = "Copied job to clipboard.";
+    });
+  });
+
+  document.querySelectorAll(".show-text-btn").forEach(button => {
+    button.addEventListener("click", () => {
+      const index = Number(button.dataset.index);
+      const el = document.getElementById(`copyText-${index}`);
+
+      if (el.style.display === "none") {
+        el.style.display = "block";
+        button.textContent = "Hide Copy Text";
+      } else {
+        el.style.display = "none";
+        button.textContent = "Show Copy Text";
+      }
+    });
+  });
 }
 
-function cleanText(html) {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, " ")
-    .trim();
+function formatJob(job) {
+  return `==================================================
+
+Company:
+${job.company || "Not found"}
+
+Job Title:
+${job.title || "Not found"}
+
+Salary:
+${job.salary || "Not found"}
+
+Location:
+${job.location || "Not found"}
+
+Work Type:
+${job.workType || "Not found"}
+
+URL:
+${job.url || "Not found"}
+
+==================================================`;
 }
 
-function meta(html, property) {
-  const re = new RegExp(`<meta[^>]+(?:property|name)=["']${property}["'][^>]+content=["']([^"']+)["']`, "i");
-  return html.match(re)?.[1] || "";
-}
-
-function h1(html) {
-  return cleanText(html.match(/<h1[^>]*>(.*?)<\/h1>/i)?.[1] || "");
-}
-
-function titleTag(html) {
-  return cleanText(html.match(/<title[^>]*>(.*?)<\/title>/i)?.[1] || "");
-}
-
-function extractSalary(text) {
-  const match = text.match(/\$[0-9]{2,3}(?:,[0-9]{3})?(?:\.\d{2})?\s*(?:-|–|to)?\s*\$?[0-9]{0,3}(?:,[0-9]{3})?(?:\.\d{2})?\s*(?:\/hour|\/hr|per hour|hourly|\/year|\/yr|per year|annually)?/i);
-  return match ? match[0].trim() : "";
-}
-
-function extractLocation(text) {
-  const match = text.match(/\b([A-Z][a-zA-Z .'-]+,\s?(WA|OR|CA|TX|NY|FL|GA|TN|AZ|CO|IL|NC|SC|VA|DC))\b/);
-  return match ? match[0].trim() : "";
-}
-
-function extractWorkType(text) {
-  if (/hybrid/i.test(text)) return "Hybrid";
-  if (/remote/i.test(text)) return "Remote";
-  if (/on-site|onsite|in person|in-person/i.test(text)) return "On-site";
-  return "";
-}
-
-function companyFromText(text) {
-  const patterns = [
-    /Company:\s*([^|]+?)(?:\s{2,}|Location:|Job)/i,
-    /Organization:\s*([^|]+?)(?:\s{2,}|Location:|Job)/i,
-    /Employer:\s*([^|]+?)(?:\s{2,}|Location:|Job)/i,
-  ];
-
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return m[1].trim();
-  }
-
-  return "";
-}
-
-function companyFromUrl(url) {
+async function copyText(text) {
   try {
-    const host = new URL(url).hostname.replace("www.", "");
-    return host.split(".")[0];
+    await navigator.clipboard.writeText(text);
   } catch {
-    return "";
+    const temp = document.createElement("textarea");
+    temp.value = text;
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand("copy");
+    temp.remove();
   }
 }
 
-function cleanTitle(title) {
-  return String(title || "")
-    .replace(/\s+/g, " ")
-    .replace(/\s*\|\s*.*$/g, "")
-    .replace(/\s*-\s*Careers.*$/i, "")
-    .replace(/\s*-\s*Job.*$/i, "")
-    .trim()
-    .slice(0, 140);
-}
-
-function cleanCompany(company, url) {
-  const bad = ["recruiting", "recruiting2", "secure4", "careers", "jobs", "job-boards", "applitrack"];
-  const cleaned = String(company || "").trim();
-
-  if (!cleaned || bad.includes(cleaned.toLowerCase())) {
-    return companyFromUrl(url);
-  }
-
-  return cleaned;
-}
-
-function pick(...values) {
-  return values.find(v => v && String(v).trim()) || "";
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
