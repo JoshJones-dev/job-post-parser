@@ -1,51 +1,43 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Job Post Extractor</title>
+  <title>Job Post Parser</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main class="app">
     <section class="hero">
-      <h1>Job Post Extractor</h1>
-      <p>Paste a job post and instantly pull the job title, salary, and location into a clean copyable format.</p>
+      <p class="eyebrow">Job Application Tool</p>
+      <h1>Job Post Parser</h1>
+      <p class="subtitle">
+        Paste multiple job URLs, parse the details, and copy everything in a clean format.
+      </p>
     </section>
 
-    <section class="grid">
-      <div class="card">
-        <label for="jobPost">Paste job post</label>
-        <textarea id="jobPost" placeholder="Paste the full job description here..."></textarea>
-        <div class="actions">
-          <button id="extractBtn">Extract Info</button>
-          <button id="clearBtn" class="secondary">Clear</button>
-        </div>
+    <section class="panel">
+      <label for="urlInput">Paste job URLs</label>
+      <textarea id="urlInput" placeholder="https://company.com/job/123&#10;https://another-company.com/jobs/456"></textarea>
+
+      <div class="actions">
+        <button id="parseBtn">Parse Jobs</button>
+        <button id="clearBtn" class="secondary">Clear</button>
       </div>
 
-      <div class="card">
-        <label for="output">Copy-ready output</label>
-        <textarea id="output" readonly placeholder="Extracted info will appear here..."></textarea>
-        <div class="actions">
-          <button id="copyBtn">Copy Output</button>
-        </div>
-      </div>
+      <p class="hint">
+        Some job sites may block automatic parsing. If that happens, the URL will still be saved and shown.
+      </p>
     </section>
 
-    <section class="card fields">
-      <h2>Extracted Fields</h2>
-      <div class="field-row">
-        <span>Job Title</span>
-        <strong id="titleField">—</strong>
+    <section class="panel output-panel">
+      <div class="output-header">
+        <h2>Results</h2>
+        <button id="copyAllBtn" class="secondary">Copy All</button>
       </div>
-      <div class="field-row">
-        <span>Salary</span>
-        <strong id="salaryField">—</strong>
-      </div>
-      <div class="field-row">
-        <span>Location</span>
-        <strong id="locationField">—</strong>
-      </div>
+
+      <div id="status" class="status">No jobs parsed yet.</div>
+      <div id="results" class="results"></div>
     </section>
   </main>
 
