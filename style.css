@@ -178,7 +178,18 @@ button.danger:hover {
 .job-title-line {
   font-size: 1.25rem;
   font-weight: 900;
-  margin-bottom: 4px;
+  margin-bottom: 8px;
+}
+
+.clean-details {
+  display: grid;
+  gap: 6px;
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.clean-details strong {
+  color: var(--muted);
 }
 
 .job-company-line {
@@ -195,7 +206,8 @@ button.danger:hover {
 }
 
 .job-url-line a,
-.small-link {
+.small-link,
+.clean-details a {
   color: #a78bfa;
   word-break: break-word;
 }
